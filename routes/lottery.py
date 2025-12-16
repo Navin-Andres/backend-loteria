@@ -127,15 +127,14 @@ def statistics():
     """Get lottery statistics (top 3 most frequent numbers with count)"""
     try:
         conn = get_db_connection()
-        c = conn.cursor()
-        c.execute('SELECT COUNT(*) FROM historical_data')
+        c = execute_query(conn, 'SELECT COUNT(*) FROM historical_data')
         count = c.fetchone()[0]
         
         if count > 0:
             # Get frequency of each number from all balota columns (1-5 only)
             numbers = []
             for i in range(1, 6):
-                c.execute(f'SELECT balota{i} FROM historical_data')
+                c = execute_query(conn, f'SELECT balota{i} FROM historical_data')
                 numbers.extend([row[0] for row in c.fetchall()])
             
             conn.close()
@@ -147,14 +146,15 @@ def statistics():
             # Format response
             top_numbers = [
                 {'number': num, 'count': freq} 
-            execute_query(conn, 'SELECT COUNT(*) FROM historical_data')
-        count = c.fetchone()[0]
-        
-        if count > 0:
-            # Get frequency of each number from all balota columns (1-5 only)
-            numbers = []
-            for i in range(1, 6):
-                c = execute_query(conn, ing statistics: {e}")
+                for num, freq in top_3_with_count
+            ]
+            
+            return jsonify({'top_three_numbers': top_numbers})
+        else:
+            conn.close()
+            return jsonify({'top_three_numbers': []})
+    except Exception as e:
+        print(f"Error getting statistics: {e}")
         return jsonify({'top_three_numbers': []})
 
 
@@ -163,15 +163,15 @@ def delete_sorteo(sorteo_id):
     """Delete a sorteo by ID"""
     try:
         conn = get_db_connection()
-        c = conn.cursor()
-        c.exexecute_query(conn, 'DELETE FROM sorteos WHERE id = ?', (sorteo_id,))
+        c = execute_query(conn, 'DELETE FROM sorteos WHERE id = ?', (sorteo_id,))
         conn.commit()
         
         # rowcount funciona en ambas bases de datos
         rows_affected = c.rowcount
         conn.close()
         
-        if rows_affectedonify({'error': 'Sorteo not found'}), 404
+        if rows_affected == 0:
+            return jsonify({'error': 'Sorteo not found'}), 404
         
         return jsonify({'success': True, 'message': 'Sorteo deleted'}), 200
     except Exception as e:
@@ -196,20 +196,7 @@ def update_sorteo(sorteo_id):
             return jsonify({'error': 'Sixth number must be between 1-16'}), 400
         
         conn = get_db_connection()
-        c = conn.cursor()
-        c.execute(
-            'UPDATE sorteos SET numbers = ? WHERE id = ?', 
-            (','.join(map(str, numbers)), sorteo_id)
-        )
-        conn.commit()
-        conn.close()
-        
-        if c.rowcount == 0:
-            return jsonify({'error': 'Sorteo not found'}), 404
-        
-        return jsonify({'success': True, 'message': 'Sorteo updated'}), 200
-    except Exception as e:
-        retuexecute_query(
+        c = execute_query(
             conn,
             'UPDATE sorteos SET numbers = ? WHERE id = ?', 
             (','.join(map(str, numbers)), sorteo_id)
@@ -219,4 +206,9 @@ def update_sorteo(sorteo_id):
         rows_affected = c.rowcount
         conn.close()
         
-        if rows_affected
+        if rows_affected == 0:
+            return jsonify({'error': 'Sorteo not found'}), 404
+        
+        return jsonify({'success': True, 'message': 'Sorteo updated'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
