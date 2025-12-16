@@ -6,23 +6,37 @@ from flask import Blueprint, jsonify, request
 from database import get_db_connection
 import random
 from collections import Counter
+import os
 
 lottery_bp = Blueprint('lottery', __name__, url_prefix='/api')
+
+
+def execute_query(conn, query, params=()):
+    """Execute query with appropriate placeholder for DB type"""
+    database_url = os.getenv('DATABASE_URL', '')
+    is_postgres = database_url.startswith('postgres')
+    
+    if is_postgres:
+        # PostgreSQL usa %s
+        query = query.replace('?', '%s')
+    
+    c = conn.cursor()
+    c.execute(query, params)
+    return c
 
 
 def get_top_3_frequent():
     """Get the top 3 most frequent numbers from historical data"""
     try:
         conn = get_db_connection()
-        c = conn.cursor()
-        c.execute('SELECT COUNT(*) FROM historical_data')
+        c = execute_query(conn, 'SELECT COUNT(*) FROM historical_data')
         count = c.fetchone()[0]
         
         if count > 0:
             # Get frequency of each number from all balota columns (1-5 only)
             numbers = []
             for i in range(1, 6):
-                c.execute(f'SELECT balota{i} FROM historical_data')
+                c = execute_query(conn, f'SELECT balota{i} FROM historical_data')
                 numbers.extend([row[0] for row in c.fetchall()])
             
             conn.close()
@@ -73,16 +87,8 @@ def save_sorteo():
         return jsonify({'error': 'Missing data'}), 400
     
     conn = get_db_connection()
-    c = conn.cursor()
-    c.execute(
-        'INSERT INTO sorteos (user_id, numbers) VALUES (?, ?)', 
-        (user_id, ','.join(map(str, numbers)))
-    )
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'success': True}), 200
-    c.execute(
+    c = execute_query(
+        conn,
         'INSERT INTO sorteos (user_id, numbers) VALUES (?, ?)', 
         (user_id, ','.join(map(str, numbers)))
     )
@@ -96,8 +102,8 @@ def save_sorteo():
 def get_history(user_id):
     """Get user's sorteo history"""
     conn = get_db_connection()
-    c = conn.cursor()
-    c.execute(
+    c = execute_query(
+        conn,
         'SELECT id, numbers, created_at FROM sorteos WHERE user_id = ? ORDER BY created_at DESC', 
         (user_id,)
     )
@@ -110,27 +116,7 @@ def get_history(user_id):
         history.append({
             'id': row[0],
             'numbers': numbers,
-            'date': row[2]
-        })
-    
-    return jsonify({'history': history}), 200
-    """Get user's sorteo history"""
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute(
-        'SELECT id, numbers, created_at FROM sorteos WHERE user_id = ? ORDER BY created_at DESC', 
-        (user_id,)
-    )
-    rows = c.fetchall()
-    conn.close()
-    
-    history = []
-    for row in rows:
-        numbers = [int(n) for n in row[1].split(',')]
-        history.append({
-            'id': row[0],
-            'numbers': numbers,
-            'date': row[2]
+            'date': str(row[2])
         })
     
     return jsonify({'history': history}), 200
@@ -138,20 +124,38 @@ def get_history(user_id):
 
 @lottery_bp.route('/statistics', methods=['GET'])
 def statistics():
-    """Get lottery statistics (top 3 most frequent numbers)"""
-    top_three = get_top_3_frequent()
-    return jsonify({
-        'top1': top_three[0] if len(top_three) > 0 else 0,
-        'top2': top_three[1] if len(top_three) > 1 else 0,
-        'top3': top_three[2] if len(top_three) > 2 else 0
-    })
-    """Get lottery statistics (top 3 most frequent numbers)"""
-    top_three = get_top_3_frequent()
-    return jsonify({
-        'top1': top_three[0] if len(top_three) > 0 else 0,
-        'top2': top_three[1] if len(top_three) > 1 else 0,
-        'top3': top_three[2] if len(top_three) > 2 else 0
-    })
+    """Get lottery statistics (top 3 most frequent numbers with count)"""
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('SELECT COUNT(*) FROM historical_data')
+        count = c.fetchone()[0]
+        
+        if count > 0:
+            # Get frequency of each number from all balota columns (1-5 only)
+            numbers = []
+            for i in range(1, 6):
+                c.execute(f'SELECT balota{i} FROM historical_data')
+                numbers.extend([row[0] for row in c.fetchall()])
+            
+            conn.close()
+            
+            # Count frequency and get top 3
+            counter = Counter(numbers)
+            top_3_with_count = counter.most_common(3)
+            
+            # Format response
+            top_numbers = [
+                {'number': num, 'count': freq} 
+            execute_query(conn, 'SELECT COUNT(*) FROM historical_data')
+        count = c.fetchone()[0]
+        
+        if count > 0:
+            # Get frequency of each number from all balota columns (1-5 only)
+            numbers = []
+            for i in range(1, 6):
+                c = execute_query(conn, ing statistics: {e}")
+        return jsonify({'top_three_numbers': []})
 
 
 @lottery_bp.route('/sorteo/<int:sorteo_id>', methods=['DELETE'])
@@ -160,26 +164,14 @@ def delete_sorteo(sorteo_id):
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute('DELETE FROM sorteos WHERE id = ?', (sorteo_id,))
+        c.exexecute_query(conn, 'DELETE FROM sorteos WHERE id = ?', (sorteo_id,))
         conn.commit()
+        
+        # rowcount funciona en ambas bases de datos
+        rows_affected = c.rowcount
         conn.close()
         
-        if c.rowcount == 0:
-            return jsonify({'error': 'Sorteo not found'}), 404
-        
-        return jsonify({'success': True, 'message': 'Sorteo deleted'}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    """Delete a sorteo by ID"""
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute('DELETE FROM sorteos WHERE id = ?', (sorteo_id,))
-        conn.commit()
-        conn.close()
-        
-        if c.rowcount == 0:
-            return jsonify({'error': 'Sorteo not found'}), 404
+        if rows_affectedonify({'error': 'Sorteo not found'}), 404
         
         return jsonify({'success': True, 'message': 'Sorteo deleted'}), 200
     except Exception as e:
@@ -217,35 +209,14 @@ def update_sorteo(sorteo_id):
         
         return jsonify({'success': True, 'message': 'Sorteo updated'}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    """Update a sorteo by ID"""
-    try:
-        data = request.json
-        numbers = data.get('numbers')
-        
-        if not numbers or len(numbers) != 6:
-            return jsonify({'error': 'Invalid numbers format'}), 400
-        
-        # Validate numbers
-        for i in range(5):
-            if not (1 <= numbers[i] <= 43):
-                return jsonify({'error': f'Number {i+1} must be between 1-43'}), 400
-        if not (1 <= numbers[5] <= 16):
-            return jsonify({'error': 'Sixth number must be between 1-16'}), 400
-        
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute(
+        retuexecute_query(
+            conn,
             'UPDATE sorteos SET numbers = ? WHERE id = ?', 
             (','.join(map(str, numbers)), sorteo_id)
         )
         conn.commit()
+        
+        rows_affected = c.rowcount
         conn.close()
         
-        if c.rowcount == 0:
-            return jsonify({'error': 'Sorteo not found'}), 404
-        
-        return jsonify({'success': True, 'message': 'Sorteo updated'}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+        if rows_affected

@@ -6,8 +6,23 @@ from flask import Blueprint, jsonify, request
 import pandas as pd
 from database import get_db_connection
 from pathlib import Path
+import os
 
 upload_bp = Blueprint('upload', __name__, url_prefix='/api')
+
+
+def execute_query(conn, query, params=()):
+    """Execute query with appropriate placeholder for DB type"""
+    database_url = os.getenv('DATABASE_URL', '')
+    is_postgres = database_url.startswith('postgres')
+    
+    if is_postgres:
+        # PostgreSQL usa %s
+        query = query.replace('?', '%s')
+    
+    c = conn.cursor()
+    c.execute(query, params)
+    return c
 
 
 def load_historical_data(file_path='baloto1.xlsx'):
@@ -72,14 +87,14 @@ def upload_file():
         
         if not df.empty:
             conn = get_db_connection()
-            c = conn.cursor()
             
             # Clear existing historical data
-            c.execute('DELETE FROM historical_data')
+            c = execute_query(conn, 'DELETE FROM historical_data')
             
             # Insert new data
             for _, row in df.iterrows():
-                c.execute(
+                c = execute_query(
+                    conn,
                     '''INSERT INTO historical_data 
                        (balota1, balota2, balota3, balota4, balota5, balota6) 
                        VALUES (?, ?, ?, ?, ?, ?)''',

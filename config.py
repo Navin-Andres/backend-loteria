@@ -38,3 +38,8 @@ config = {
     'production': ProductionConfig,
     'default': DevelopmentConfig
 }
+
+class prodConfig(Config):
+    """Production configuration"""
+    DEBUG = False
+    CORS_ORIGINS = "https://backend-loteria-y724.onrender.com"  # Restrict to specific origin
